@@ -1,14 +1,15 @@
 import React, { FC, useState, useEffect, useCallback } from 'react';
-import apiService from '../services/apiService';
-import { FuelEntry, Truck, SaveState } from '../types';
+import { db } from '../firebase';
+import { collection, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { FuelEntry, Truck, SaveState, User } from '../types';
 import { statesAndProvinces } from '../utils/constants';
+import { scanReceiptWithAI } from '../services/aiService';
 
 import { FormCard } from '../components/ui/FormCard';
 import { Autocomplete } from '../components/ui/Autocomplete';
 import { Spinner } from '../components/ui/Spinner';
 import { FileUpload } from '../components/FileUpload';
-
-interface User { id: number; email: string; }
 
 interface FuelEntryFormProps {
     trucks: Truck[];
@@ -91,6 +92,7 @@ const FuelEntryForm: FC<FuelEntryFormProps> = ({ trucks, showToast, onSave, entr
     const handleFileSelect = useCallback(async (file: File | null) => {
         setReceiptFile(file);
         setScanError(null);
+
         if (previewObjectURL) {
             URL.revokeObjectURL(previewObjectURL);
             setPreviewObjectURL(null);
@@ -100,60 +102,45 @@ const FuelEntryForm: FC<FuelEntryFormProps> = ({ trucks, showToast, onSave, entr
             const objectUrl = URL.createObjectURL(file);
             setPreviewObjectURL(objectUrl);
             setReceiptPreview(objectUrl);
-
             setIsScanning(true);
+
             try {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onloadend = async () => {
-                    try {
-                        const base64String = (reader.result as string).split(',')[1];
-                        const mimeType = file.type;
-                        const data = await apiService.scanReceipt(base64String, mimeType);
-                        
-                        const parsedCost = data.cost;
-                        const parsedAmount = data.amount;
+                const data = await scanReceiptWithAI(file);
 
-                        if (parsedCost) setCost(parsedCost.toString());
-                        if (parsedAmount) setAmount(parsedAmount.toString());
+                if (data.total_cost) setCost(data.total_cost.toString());
+                if (data.fuel_gallons) setAmount(data.fuel_gallons.toString());
 
-                        if (parsedCost && parsedAmount && parsedAmount > 0) {
-                            setPricePerGallon((parsedCost / parsedAmount).toFixed(4));
-                        }
+                if (data.total_cost && data.fuel_gallons && data.fuel_gallons > 0) {
+                    setPricePerGallon((data.total_cost / data.fuel_gallons).toFixed(4));
+                }
 
-                        if (data.city) setCity(data.city);
-                        if (data.state) setState(data.state.toUpperCase());
-                        if (data.date) {
-                            const parsedDate = new Date(data.date + 'T12:00:00Z');
-                            if (!isNaN(parsedDate.getTime())) {
-                               const localDate = new Date(parsedDate.getTime() + parsedDate.getTimezoneOffset() * 60000);
-                               setDateTime(localDate.toISOString().slice(0,16));
-                            }
-                        }
-                        if (data.fuelType) {
-                            const ft = data.fuelType.toLowerCase();
-                            if(ft.includes('diesel')) setFuelType('diesel');
-                            else if(ft.includes('def')) setFuelType('def');
-                            else {
-                                setFuelType('custom');
-                                setCustomFuelType(data.fuelType);
-                            }
-                        }
-                        showToast("Receipt auto-filled!", "success");
-                    } catch (e: any) {
-                         console.error("Scan failed:", e);
-                         setScanError(`Scan failed: ${e.message}. Please enter manually.`);
-                    } finally {
-                        setIsScanning(false);
+                if (data.city) setCity(data.city);
+                if (data.state) setState(data.state.toUpperCase());
+                if (data.purchase_date) {
+                    const parsedDate = new Date(data.purchase_date + 'T12:00:00Z');
+                     if (!isNaN(parsedDate.getTime())) {
+                        const localDate = new Date(parsedDate.getTime() + parsedDate.getTimezoneOffset() * 60000);
+                        setDateTime(localDate.toISOString().slice(0,16));
+                     }
+                }
+                if (data.fuel_type) {
+                    const ft = data.fuel_type.toLowerCase();
+                    if(ft.includes('diesel')) setFuelType('diesel');
+                    else if(ft.includes('def')) setFuelType('def');
+                    else {
+                        setFuelType('custom');
+                        setCustomFuelType(data.fuel_type);
                     }
-                };
+                }
+                showToast("Receipt auto-filled successfully!", "success");
             } catch (error: any) {
-                 console.error("File Read failed:", error);
-                 setScanError(`Failed to read file. Please try again.`);
-                 setIsScanning(false);
+                console.error("AI Scan failed:", error);
+                setScanError(error.message || "Scan failed. Please enter details manually.");
+            } finally {
+                setIsScanning(false);
             }
         } else {
-             if (!entryToEdit?.receiptUrl) {
+            if (!entryToEdit?.receiptUrl) {
                 setReceiptPreview(null);
             }
         }
@@ -195,10 +182,18 @@ const FuelEntryForm: FC<FuelEntryFormProps> = ({ trucks, showToast, onSave, entr
         e.preventDefault();
         setSaveState('saving');
         
-        const receiptUrl = entryToEdit?.receiptUrl || '';
+        let receiptUrl = entryToEdit?.receiptUrl || '';
 
         try {
+            if (receiptFile) {
+                const storage = getStorage();
+                const storageRef = ref(storage, `receipts/${user.id}/${Date.now()}-${receiptFile.name}`);
+                const snapshot = await uploadBytes(storageRef, receiptFile);
+                receiptUrl = await getDownloadURL(snapshot.ref);
+            }
+
             const entryData = {
+                userId: user.id,
                 truckNumber,
                 dateTime,
                 odometer: parseFloat(odometer) || 0,
@@ -210,13 +205,18 @@ const FuelEntryForm: FC<FuelEntryFormProps> = ({ trucks, showToast, onSave, entr
                 cost: parseFloat(cost) || 0,
                 receiptUrl,
                 isIgnored: entryToEdit?.isIgnored || false,
+                lastEditedAt: new Date().toISOString(),
             };
             
             if (entryToEdit) {
-                await apiService.updateEntry(entryToEdit.id, entryData);
+                const entryDocRef = doc(db, 'fuel_entries', entryToEdit.id);
+                await updateDoc(entryDocRef, entryData);
                 showToast("Entry updated successfully!", "success");
             } else {
-                await apiService.addEntry(entryData);
+                await addDoc(collection(db, 'fuel_entries'), {
+                    ...entryData,
+                    createdAt: new Date().toISOString()
+                });
                 showToast("Entry saved successfully!", "success");
             }
 

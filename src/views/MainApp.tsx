@@ -1,6 +1,7 @@
 import React, { FC, useState, useEffect, useCallback } from 'react';
-import { View, Theme, FuelEntry, Truck } from '../types';
-import apiService from '../services/apiService';
+import { View, Theme, FuelEntry, Truck, User } from '../types';
+import { db } from '../firebase';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { Header } from '../components/Header';
 import { BottomNav } from '../components/BottomNav';
 import { ActionSheet } from '../components/ActionSheet';
@@ -10,11 +11,6 @@ import FuelEntryForm from './FuelEntryForm';
 import EntriesView from './EntriesView';
 import ReportsView from './ReportsView';
 import SettingsView from './SettingsView';
-
-interface User {
-    id: number;
-    email: string;
-}
 
 interface MainAppProps { 
     user: User; 
@@ -46,19 +42,38 @@ const MainApp: FC<MainAppProps> = ({ user, currentView, setCurrentView, showToas
         };
     }, []);
 
+    const [entries, setEntries] = useState<FuelEntry[]>([]);
+
     const fetchTrucks = useCallback(async () => {
+        if (!user) return;
         try {
-            const trucksList = await apiService.getTrucks();
+            const trucksCol = collection(db, 'trucks');
+            const q = query(trucksCol, where("userId", "==", user.id), orderBy("number"));
+            const trucksSnapshot = await getDocs(q);
+            const trucksList = trucksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Truck[];
             setTrucks(trucksList);
         } catch (err: any) {
-             setIsOffline(true);
-            showToast(err.message || "Failed to load trucks.", "error");
+            showToast("Failed to load trucks.", "error");
         }
-    }, [showToast]);
+    }, [user, showToast]);
+
+    const fetchEntries = useCallback(async () => {
+        if (!user) return;
+        try {
+            const entriesCol = collection(db, 'fuel_entries');
+            const q = query(entriesCol, where("userId", "==", user.id), orderBy("dateTime", "desc"));
+            const entriesSnapshot = await getDocs(q);
+            const entriesList = entriesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as FuelEntry[];
+            setEntries(entriesList);
+        } catch (err: any) {
+            showToast("Failed to load fuel entries.", "error");
+        }
+    }, [user, showToast]);
 
     useEffect(() => {
         fetchTrucks();
-    }, [fetchTrucks, refreshTrigger]);
+        fetchEntries();
+    }, [user, refreshTrigger, fetchTrucks, fetchEntries]);
 
     const handleEditRequest = (entry: FuelEntry) => {
         setEntryToEdit(entry);
@@ -75,18 +90,18 @@ const MainApp: FC<MainAppProps> = ({ user, currentView, setCurrentView, showToas
         const commonProps = { user, showToast, theme, onDataChange: triggerRefresh };
 
         switch (currentView) {
-            case 'dashboard': return <DashboardView {...commonProps} onOpenActionSheet={setActionSheetEntry} />;
+            case 'dashboard': return <DashboardView {...commonProps} entries={entries} onOpenActionSheet={setActionSheetEntry} />;
             case 'add-entry': return <FuelEntryForm trucks={trucks} {...commonProps} onSave={() => { triggerRefresh(); setCurrentView('entries'); }} entryToEdit={entryToEdit} setEntryToEdit={setEntryToEdit} />;
-            case 'entries': return <EntriesView {...commonProps} onOpenActionSheet={setActionSheetEntry} />;
-            case 'reports': return <ReportsView {...commonProps} trucks={trucks} />;
+            case 'entries': return <EntriesView {...commonProps} entries={entries} onOpenActionSheet={setActionSheetEntry} />;
+            case 'reports': return <ReportsView {...commonProps} trucks={trucks} allEntries={entries} />;
             case 'settings': return <SettingsView {...commonProps} trucks={trucks} onTrucksChange={fetchTrucks} onSignOut={onSignOut} setTheme={setTheme} />;
-            default: return <DashboardView {...commonProps} onOpenActionSheet={setActionSheetEntry} />;
+            default: return <DashboardView {...commonProps} entries={entries} onOpenActionSheet={setActionSheetEntry} />;
         }
     }
     
     return(
         <div>
-            <Header isOffline={isOffline} theme={theme} setTheme={setTheme} />
+            <Header isOffline={isOffline} theme={theme} setTheme={setTheme} user={user} />
             <main className="container mx-auto px-4 pb-24 pt-24">
                 {renderView()}
             </main>

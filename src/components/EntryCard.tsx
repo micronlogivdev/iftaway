@@ -10,18 +10,28 @@ export const EntryCard: FC<{ entry: FuelEntry, onOpenActionSheet: (entry: FuelEn
     }[entry.fuelType];
 
     return (
-        <div className={`bg-light-card dark:bg-dark-card p-4 rounded-lg border border-light-border dark:border-dark-border shadow-sm transition-all duration-200 hover:border-light-accent/50 dark:hover:border-dark-accent/50 hover:shadow-md cursor-pointer ${entry.isIgnored ? 'opacity-50' : ''}`} onClick={() => onOpenActionSheet(entry)}>
-            <div className="flex justify-between items-start mb-3">
+        <div
+            className={`bg-light-card dark:bg-dark-card p-4 rounded-xl border border-light-border dark:border-dark-border shadow-sm transition-all duration-200 hover:border-primary-500/50 hover:shadow-lg cursor-pointer ${entry.isIgnored ? 'opacity-50 grayscale' : ''}`}
+            onClick={() => onOpenActionSheet(entry)}
+        >
+            <div className="flex justify-between items-start">
                 <div>
-                    <p className="font-semibold text-lg text-light-text dark:text-dark-text">{entry.city}, {entry.state}</p>
-                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">{new Date(entry.dateTime).toLocaleString()}</p>
+                    <p className="font-semibold text-md text-light-text dark:text-dark-text">{entry.city}, {entry.state}</p>
+                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">{new Date(entry.dateTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
                 </div>
-                <span className={`px-3 py-1 text-xs font-medium rounded-full capitalize ${fuelBadgeClass}`}>{fuelDisplay}</span>
+                <div className="text-right">
+                    <p className="font-bold text-lg text-light-text dark:text-dark-text">${entry.cost.toFixed(2)}</p>
+                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">{entry.amount.toFixed(2)} gal</p>
+                </div>
             </div>
-            <div className="grid grid-cols-3 gap-4 text-center mt-4 border-t border-light-border dark:border-dark-border pt-3">
-                <div><p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Truck</p><p className="font-semibold text-light-text dark:text-dark-text">{entry.truckNumber || 'N/A'}</p></div>
-                <div><p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Total Cost</p><p className="font-semibold text-light-text dark:text-dark-text">${entry.cost.toFixed(2)}</p></div>
-                <div><p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Odometer</p><p className="font-semibold text-light-text dark:text-dark-text">{entry.odometer.toLocaleString()}</p></div>
+            <div className="flex justify-between items-center mt-3 border-t border-light-border dark:border-dark-border pt-3 text-sm">
+                <span className={`px-2 py-1 text-xs font-semibold rounded-full capitalize ${fuelBadgeClass}`}>{fuelDisplay}</span>
+                <p className="text-light-text-secondary dark:text-dark-text-secondary">
+                    <i className="fas fa-truck mr-2"></i>Truck #{entry.truckNumber || 'N/A'}
+                </p>
+                <p className="text-light-text-secondary dark:text-dark-text-secondary">
+                    <i className="fas fa-tachometer-alt mr-2"></i>{entry.odometer.toLocaleString()}
+                </p>
             </div>
         </div>
     );

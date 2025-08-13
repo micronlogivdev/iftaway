@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Theme } from './types';
-import apiService from './services/apiService';
+import { View, Theme, User } from './types';
+import { auth, db } from './firebase';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
 import MainApp from './views/MainApp';
 import AuthScreen from './views/AuthScreen';
 import { Spinner } from './components/ui/Spinner';
 import { Toast } from './components/ui/Toast';
-
-interface User {
-  id: number;
-  email: string;
-}
 
 function App() {
     const [user, setUser] = useState<User | null>(null);
@@ -30,32 +27,40 @@ function App() {
         setToast({ message, type });
     };
 
-    const verifyToken = useCallback(async () => {
-        const token = localStorage.getItem('iftaway_token');
-        if (token) {
-            try {
-                const data = await apiService.getMe();
-                setUser(data.user);
-            } catch (error) {
-                localStorage.removeItem('iftaway_token');
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+            if (firebaseUser) {
+                // User is signed in, see docs for a list of available properties
+                // https://firebase.google.com/docs/reference/js/firebase.User
+                const userDocRef = doc(db, "users", firebaseUser.uid);
+                const userDocSnap = await getDoc(userDocRef);
+
+                if (userDocSnap.exists()) {
+                    setUser({
+                        id: firebaseUser.uid, // Use Firebase UID as the primary ID
+                        ...userDocSnap.data()
+                    } as User);
+                } else {
+                    // This case might happen if a user is created in Auth but not in Firestore
+                    // Or for Google Sign-In on first login, Firestore doc is created in AuthScreen
+                     setUser({
+                        id: firebaseUser.uid,
+                        email: firebaseUser.email || "",
+                    });
+                }
+            } else {
+                // User is signed out
                 setUser(null);
             }
-        }
-        setIsLoading(false);
-    }, []);
+            setIsLoading(false);
+        });
 
-    useEffect(() => {
-        verifyToken();
-    }, [verifyToken]);
-    
-    const handleLoginSuccess = (data: { user: User, token: string }) => {
-        localStorage.setItem('iftaway_token', data.token);
-        setUser(data.user);
-    };
+        // Cleanup subscription on unmount
+        return () => unsubscribe();
+    }, []);
     
     const handleSignOut = () => {
-        localStorage.removeItem('iftaway_token');
-        setUser(null);
+        auth.signOut();
         setCurrentView('dashboard'); // Reset to dashboard view on sign out
     };
 
@@ -75,7 +80,7 @@ function App() {
             {user ? (
                 <MainApp user={user} currentView={currentView} setCurrentView={setCurrentView} showToast={showToast} theme={theme} setTheme={setTheme} onSignOut={handleSignOut}/>
             ) : (
-                <AuthScreen onLoginSuccess={handleLoginSuccess} showToast={showToast} theme={theme} setTheme={setTheme} />
+                <AuthScreen showToast={showToast} theme={theme} setTheme={setTheme} />
             )}
             {toast && <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
         </div>

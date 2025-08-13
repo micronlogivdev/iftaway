@@ -33,3 +33,11 @@ export type SaveState = 'idle' | 'saving' | 'success' | 'error';
 
 export type UploadStatus = 'idle' | 'reading' | 'parsing' | 'uploading' | 'success' | 'error';
 export interface UploadProgress { status: UploadStatus; percentage: number; message: string; }
+
+export interface User {
+    id: string; // Firebase UID is a string
+    email: string;
+    firstName?: string;
+    lastName?: string;
+    companyName?: string;
+}

@@ -1,8 +1,7 @@
 import React, { FC } from 'react';
-import apiService from '../services/apiService';
-import { FuelEntry } from '../types';
-
-interface User { id: number; email: string; }
+import { db } from '../firebase';
+import { doc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { FuelEntry, User } from '../types';
 
 interface ActionSheetProps { 
     entry: FuelEntry; 
@@ -17,7 +16,8 @@ export const ActionSheet: FC<ActionSheetProps> = ({ entry, onClose, onEdit, show
     const handleDelete = async () => {
         if (!window.confirm("Are you sure you want to delete this entry?")) return;
         try {
-            await apiService.deleteEntry(entry.id);
+            const entryDocRef = doc(db, 'fuel_entries', entry.id);
+            await deleteDoc(entryDocRef);
             showToast("Entry deleted", "success");
             onDataChange();
             onClose();
@@ -26,7 +26,8 @@ export const ActionSheet: FC<ActionSheetProps> = ({ entry, onClose, onEdit, show
 
     const handleToggleIgnore = async () => {
         try {
-            await apiService.toggleIgnoreEntry(entry.id, !entry.isIgnored);
+            const entryDocRef = doc(db, 'fuel_entries', entry.id);
+            await updateDoc(entryDocRef, { isIgnored: !entry.isIgnored });
             showToast(`Entry marked as ${!entry.isIgnored ? 'ignored' : 'active'}.`, "success");
             onDataChange();
             onClose();

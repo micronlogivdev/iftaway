@@ -5,16 +5,14 @@ import { FormCard } from '../components/ui/FormCard';
 import { Spinner } from '../components/ui/Spinner';
 import { Modal } from '../components/ui/Modal';
 import { InsightCard } from '../components/InsightCard';
+import { exportIftaReportToCsv, exportTransactionsToCsv } from '../utils/csvHelpers';
 
 const ReportsView: FC<{ trucks: Truck[]; showToast: (msg: string, type?: any) => void; theme: Theme; onDataChange: () => void; }> = ({ showToast, onDataChange }) => {
-    const getCurrentQuarter = () => Math.floor(new Date().getMonth() / 3) + 1;
-    const getYears = () => {
-        const currentYear = new Date().getFullYear();
-        return Array.from({ length: 5 }, (_, i) => currentYear - i);
-    };
+    const defaultEndDate = new Date();
+    const defaultStartDate = new Date(defaultEndDate.getFullYear(), defaultEndDate.getMonth() - 3, defaultEndDate.getDate());
 
-    const [selectedQuarter, setSelectedQuarter] = useState(getCurrentQuarter());
-    const [selectedYear, setSelectedYear] = useState(getYears()[0]);
+    const [startDate, setStartDate] = useState(defaultStartDate.toISOString().split('T')[0]);
+    const [endDate, setEndDate] = useState(defaultEndDate.toISOString().split('T')[0]);
     const [isLoading, setIsLoading] = useState(false);
     const [insights, setInsights] = useState<any | null>(null);
     const [showDisclaimer, setShowDisclaimer] = useState(false);
@@ -38,40 +36,12 @@ const ReportsView: FC<{ trucks: Truck[]; showToast: (msg: string, type?: any) =>
     const calculateDistance = (entry1: FuelEntry, entry2: FuelEntry): number => {
         return Math.abs(entry2.odometer - entry1.odometer);
     };
-    
-    const downloadCSV = (data: { rows: any[], mpg: number }) => {
-        const { rows, mpg } = data;
-        let csvContent = "data:text/csv;charset=utf-8,";
-        csvContent += `IFTA Report\n`;
-        csvContent += `Quarter,Q${selectedQuarter}\n`;
-        csvContent += `Year,${selectedYear}\n`;
-        csvContent += `Overall Fleet MPG,${mpg.toFixed(2)}\n\n`;
-        
-        const headers = ["Jurisdiction", "Total Miles Driven", "Total Fuel Purchased (Gallons)", "Total Fuel Cost ($)"];
-        csvContent += headers.join(",") + "\n";
-
-        rows.forEach(row => {
-            const rowArray = [
-                row.jurisdiction,
-                row.totalMiles.toFixed(2),
-                row.totalFuel.toFixed(2),
-                row.totalCost.toFixed(2)
-            ];
-            csvContent += rowArray.join(",") + "\n";
-        });
-
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `IFTA_Report_Q${selectedQuarter}_${selectedYear}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
 
     const handleConfirmAndDownload = () => {
         if (reportDataForCsv) {
-            downloadCSV(reportDataForCsv);
+            const quarter = Math.floor(new Date(startDate).getMonth() / 3) + 1;
+            const year = new Date(startDate).getFullYear();
+            exportIftaReportToCsv(reportDataForCsv, quarter, year);
         }
         setShowDisclaimer(false);
         setReportDataForCsv(null);
@@ -82,14 +52,15 @@ const ReportsView: FC<{ trucks: Truck[]; showToast: (msg: string, type?: any) =>
         setInsights(null);
         setReportDataForCsv(null);
         
-        const startDate = new Date(selectedYear, (selectedQuarter - 1) * 3, 1);
-        const endDate = new Date(selectedYear, selectedQuarter * 3, 0, 23, 59, 59);
+        const reportStartDate = new Date(startDate);
+        const reportEndDate = new Date(endDate);
+        reportEndDate.setHours(23, 59, 59); // Ensure end of day
 
         try {
             const entries = allEntries
                 .filter(e => {
                     const entryDate = new Date(e.dateTime);
-                    return entryDate >= startDate && entryDate <= endDate && !e.isIgnored;
+                    return entryDate >= reportStartDate && entryDate <= reportEndDate && !e.isIgnored;
                 })
                 .sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
 
@@ -193,29 +164,44 @@ const ReportsView: FC<{ trucks: Truck[]; showToast: (msg: string, type?: any) =>
                 <p className="font-semibold mt-2">Please verify all data before filing your IFTA report.</p>
             </Modal>}
 
-            <FormCard title={<><i className="fas fa-file-invoice text-light-accent dark:text-dark-accent"></i> IFTA Report Generator</>}>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <FormCard title={<><i className="fas fa-file-invoice text-light-accent dark:text-dark-accent"></i> Report Generator</>}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-medium text-light-text-secondary dark:text-dark-text-secondary mb-1">Quarter</label>
-                        <select value={selectedQuarter} onChange={e => setSelectedQuarter(parseInt(e.target.value))} className={inputStyle}>
-                            <option value="1">Q1 (Jan - Mar)</option>
-                            <option value="2">Q2 (Apr - Jun)</option>
-                            <option value="3">Q3 (Jul - Sep)</option>
-                            <option value="4">Q4 (Oct - Dec)</option>
-                        </select>
+                        <label className="block text-sm font-medium text-light-text-secondary dark:text-dark-text-secondary mb-1">Start Date</label>
+                        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={inputStyle} />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-light-text-secondary dark:text-dark-text-secondary mb-1">Year</label>
-                        <select value={selectedYear} onChange={e => setSelectedYear(parseInt(e.target.value))} className={inputStyle}>
-                            {getYears().map(y => <option key={y} value={y}>{y}</option>)}
-                        </select>
+                        <label className="block text-sm font-medium text-light-text-secondary dark:text-dark-text-secondary mb-1">End Date</label>
+                        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={inputStyle} />
                     </div>
-                    <div className="flex items-end">
-                        <button onClick={handleGenerateReport} disabled={isLoading} className="w-full h-10 px-4 py-2 rounded-lg font-semibold text-white bg-light-accent dark:bg-dark-accent hover:opacity-90 transition flex items-center justify-center gap-2 disabled:bg-slate-400 dark:disabled:bg-slate-600">
-                           {isLoading ? <Spinner /> : <i className="fas fa-cogs"></i>}
-                           Generate Report
-                        </button>
-                    </div>
+                </div>
+                <div className="flex items-center gap-4 mt-4">
+                    <button onClick={handleGenerateReport} disabled={isLoading} className="w-full h-10 px-4 py-2 rounded-lg font-semibold text-white bg-light-accent dark:bg-dark-accent hover:opacity-90 transition flex items-center justify-center gap-2 disabled:bg-slate-400 dark:disabled:bg-slate-600">
+                       {isLoading ? <Spinner /> : <i className="fas fa-cogs"></i>}
+                       Generate IFTA Insights
+                    </button>
+                    <button
+                        onClick={() => {
+                            const reportStartDate = new Date(startDate);
+                            const reportEndDate = new Date(endDate);
+                            reportEndDate.setHours(23, 59, 59);
+                            const entriesToExport = allEntries.filter(e => {
+                                const entryDate = new Date(e.dateTime);
+                                return entryDate >= reportStartDate && entryDate <= reportEndDate && !e.isIgnored;
+                            });
+                            if (entriesToExport.length > 0) {
+                                exportTransactionsToCsv(entriesToExport, reportStartDate, reportEndDate);
+                                showToast("Transaction CSV exported successfully!", "success");
+                            } else {
+                                showToast("No transactions found in the selected date range.", "info");
+                            }
+                        }}
+                        disabled={isLoading || allEntries.length === 0}
+                        className="w-full h-10 px-4 py-2 rounded-lg font-semibold text-light-accent dark:text-dark-accent bg-transparent border border-light-accent/50 dark:border-dark-accent/50 hover:bg-light-accent/10 dark:hover:bg-dark-accent/10 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                       <i className="fas fa-file-csv"></i>
+                       Export Transactions
+                    </button>
                 </div>
             </FormCard>
 
