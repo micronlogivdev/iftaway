@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text;
+    font-family: 'Sora', sans-serif;
+    padding-bottom: 80px; /* Adjust based on nav height */
+  }
+}
+
+/* Custom scrollbar for dark theme */
+html.dark ::-webkit-scrollbar { width: 8px; }
+html.dark ::-webkit-scrollbar-track { @apply bg-dark-bg; }
+html.dark ::-webkit-scrollbar-thumb { @apply bg-dark-border; border-radius: 4px; }
+html.dark ::-webkit-scrollbar-thumb:hover { @apply bg-base-700; }
+
+/* Custom scrollbar for light theme */
+html.light ::-webkit-scrollbar { width: 8px; }
+html.light ::-webkit-scrollbar-track { @apply bg-light-card; }
+html.light ::-webkit-scrollbar-thumb { @apply bg-light-border; border-radius: 4px; }
+html.light ::-webkit-scrollbar-thumb:hover { @apply bg-base-200; }
+
+.recharts-responsive-container {
+  min-height: 250px;
+}
+
+/* Animations for Action Sheet */
+@keyframes fade-in-fast {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-up-fast {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.animate-fade-in-fast { animation: fade-in-fast 0.2s ease-out forwards; }
+.animate-slide-up-fast { animation: slide-up-fast 0.2s ease-out forwards; }
